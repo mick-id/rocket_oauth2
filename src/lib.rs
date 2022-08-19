@@ -698,6 +698,49 @@ impl<K: 'static> OAuth2<K> {
         Ok(Redirect::to(uri))
     }
 
+    /// Prepare an authentication redirect. This sets the state cookie and query 
+    /// as a specified string with a random number after a || and returns
+    /// a `Redirect` to the authorization endpoint. Unlike [`get_redirect_extras`],
+    /// this method uses the state param to pass through query information; this can be
+    /// used to provide or request additional information that will survive interactions
+    /// with various providers (e.g. AWS Cognito) to be parsed afterwards.
+    ///
+    /// [`get_redirect`]: Self::get_redirect
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use rocket::http::CookieJar;
+    /// use rocket::response::Redirect;
+    /// use rocket_oauth2::OAuth2;
+    ///
+    /// struct Cognito;
+    ///
+    /// #[rocket::get("/login/cognito")]
+    /// fn reddit_login(oauth2: OAuth2<Cognito>, cookies: &CookieJar<'_>) -> Redirect {
+    ///     oauth2.get_redirect_state(cookies, &["identity"], "project_id=999|type=json").unwrap()
+    /// }
+    /// ```
+    pub fn get_redirect_state(
+        &self,
+        cookies: &CookieJar<'_>,
+        scopes: &[&str],
+        query_state: String,
+    ) -> Result<Redirect, Error> {
+        let rng_state = generate_state(&mut rand::thread_rng())?;
+        let state = format!("{}||{}", query_state, rng_state);
+        let uri = self
+            .0
+            .adapter
+            .authorization_uri(&self.0.config, &state, scopes, &[])?;
+        cookies.add_private(
+            Cookie::build(STATE_COOKIE_NAME, state)
+                .same_site(SameSite::Lax)
+                .finish(),
+        );
+        Ok(Redirect::to(uri))
+    }
+
     /// Request a new access token given a refresh token. The refresh token
     /// must have been returned by the provider in a previous [`TokenResponse`].
     ///
